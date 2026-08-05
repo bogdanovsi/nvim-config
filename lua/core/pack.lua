@@ -87,6 +87,9 @@ vim.pack.add({
     { src = gh("nvim-neotest/neotest-go"), version = "05535cb2cfe3ce5c960f65784896d40109572f89" }, -- https://github.com/nvim-neotest/neotest-go/issues/57
     gh("andythigpen/nvim-coverage"),
     gh("stevearc/conform.nvim"),
+
+    -- claude code
+    gh("greggh/claude-code.nvim"),
 })
 
 -- setup
@@ -102,5 +105,18 @@ require("plugin.test")
 require("plugin.conform")
 require("xcodebuild").setup({})
 require("grug-far").setup({})
+require("claude-code").setup({
+  window = {
+    position = "float",
+    float = {
+      width = "90%",      -- Take up 90% of the editor width
+      height = "90%",     -- Take up 90% of the editor height
+      row = "center",     -- Center vertically
+      col = "center",     -- Center horizontally
+      relative = "editor",
+      border = "double",  -- Use double border style
+    },
+  },
+})
 
 -- require("jdtls").setup()
