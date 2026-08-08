@@ -83,6 +83,40 @@ M.save_to_clipboard = vim.schedule_wrap(function(lines)
     vim.fn.setreg("+", lines)
 end)
 
+--- Yank buffer lines as a markdown snippet with filename + line range header.
+--- Format:
+---   main.go 1:10
+---   ```
+---   code
+---   ```
+--- @param line1? integer start line (1-indexed); defaults to current line
+--- @param line2? integer end line (1-indexed); defaults to line1
+--- @return string snippet that was copied
+function M.yank_selection_snippet(line1, line2)
+    local start_line = line1 or vim.fn.line(".")
+    local end_line = line2 or start_line
+    if start_line > end_line then
+        start_line, end_line = end_line, start_line
+    end
+
+    local filename = vim.fn.expand("%:t")
+    if filename == "" then
+        filename = "[No Name]"
+    end
+
+    local lines = vim.api.nvim_buf_get_lines(0, start_line - 1, end_line, false)
+    local code = table.concat(lines, "\n")
+    local header = string.format("%s %d:%d", filename, start_line, end_line)
+    local snippet = string.format("%s\n```\n%s\n```", header, code)
+
+    -- Set both system clipboard and unnamed register immediately (not deferred)
+    vim.fn.setreg("+", snippet)
+    vim.fn.setreg('"', snippet)
+
+    vim.notify(string.format("Yanked %s (%d lines)", header, #lines), vim.log.levels.INFO)
+    return snippet
+end
+
 function M.stop_lsp_byname(name)
     -- Check if yamlls is attached to the buffer
     local clients = vim.lsp.get_active_clients({ bufnr = 0 })

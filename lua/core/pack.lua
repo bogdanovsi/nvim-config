@@ -103,6 +103,7 @@ require("plugin.treesitter")
 require("plugin.telescope")
 require("plugin.test")
 require("plugin.conform")
+require("plugin.render-markdown")
 require("xcodebuild").setup({})
 require("grug-far").setup({})
 require("claude-code").setup({

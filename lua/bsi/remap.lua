@@ -179,6 +179,31 @@ vim.keymap.set("n", "<leader>go", ide.open_file_in_browser, { desc = "Open curre
 vim.keymap.set("n", "<leader>gy", ide.yank_file_url, { desc = "Yank current file web URL" })
 vim.keymap.set("n", "<leader>gY", ide.yank_line_url, { desc = "Yank current file+line web URL" })
 vim.keymap.set('n', '<leader>gi', fastgit.open_gitlab_pipelines, { noremap = true, silent = true })
+
+-- Yank selection as markdown snippet: "filename start:end\n```\ncode\n```"
+vim.api.nvim_create_user_command("YankSnippet", function(opts)
+    nvim.yank_selection_snippet(opts.line1, opts.line2)
+end, {
+    range = true,
+    desc = "Yank lines as markdown snippet with filename + line range",
+})
+vim.keymap.set("v", "<leader>ys", function()
+    local start_line = vim.fn.line("v")
+    local end_line = vim.fn.line(".")
+    nvim.yank_selection_snippet(start_line, end_line)
+end, {
+    noremap = true,
+    silent = true,
+    desc = "Yank selection as snippet (filename + range)",
+})
+vim.keymap.set("n", "<leader>ys", function()
+    local line = vim.fn.line(".")
+    nvim.yank_selection_snippet(line, line)
+end, {
+    noremap = true,
+    silent = true,
+    desc = "Yank current line as snippet (filename + range)",
+})
 ---
 
 --- dap keymap
