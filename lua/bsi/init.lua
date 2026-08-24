@@ -102,7 +102,10 @@ autocmd({ 'BufNewFile', 'BufRead' }, {
         "**/templates/*.yaml",
         "**/templates/*.yml",
         "**/templates/*.tpl",
-        "*.gotmpl",
+        "**/templates/*.tmpl",
+        "**/templates/*.gotmpl",
+        "helmfile*.yaml",
+        "helmfile*.yml",
     },
     callback = function()
         vim.opt_local.filetype = 'helm'
@@ -116,6 +119,10 @@ autocmd({ 'BufNewFile', 'BufRead' }, {
     end
 })
 
+-- Go templates: detect host/result language and inject treesitter highlighting.
+-- See lua/bsi/gotmpl.lua (filename like *.html.tmpl, or content heuristics).
+require("bsi.gotmpl").setup()
+
 
 
 autocmd({ "FileType" }, {
@@ -124,6 +131,17 @@ autocmd({ "FileType" }, {
         vim.opt.tabstop = 2
         vim.opt.shiftwidth = 2
         vim.opt.expandtab = true
+    end
+})
+
+-- Hurl (*.hurl): Neovim 0.12 already sets the filetype. Force the hurl
+-- treesitter highlighter so request methods, sections, and injected
+-- JSON/XML/GraphQL bodies get highlights (parser is in ensureInstalled).
+autocmd({ "FileType" }, {
+    pattern = { "hurl" },
+    callback = function(ev)
+        pcall(vim.treesitter.start, ev.buf, "hurl")
+        vim.bo[ev.buf].commentstring = "# %s"
     end
 })
 

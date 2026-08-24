@@ -154,6 +154,10 @@
       "rev": "4ae2f2e8e8c66d070f33cfb57cb6f867e3baf5d9",
       "src": "https://github.com/MeanderingProgrammer/render-markdown.nvim"
     },
+    "sniprun": {
+      "rev": "647995168a0682b359dfbf49bd3b0e8b9f2026dc",
+      "src": "https://github.com/michaelb/sniprun"
+    },
     "telescope-fzf-native.nvim": {
       "rev": "6fea601bd2b694c6f2ae08a6c6fab14930c60e2c",
       "src": "https://github.com/nvim-telescope/telescope-fzf-native.nvim"

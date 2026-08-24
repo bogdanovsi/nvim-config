@@ -1,4 +1,30 @@
 local gh = function(x) return 'https://github.com/' .. x end
+
+-- vim.pack has no build= hook. Compile sniprun locally on install/update
+-- (macOS cannot use the Linux prebuilt binary; cargo is required).
+vim.api.nvim_create_autocmd("PackChanged", {
+    callback = function(ev)
+        local data = ev.data or {}
+        local spec = data.spec or {}
+        if spec.name ~= "sniprun" then
+            return
+        end
+        if data.kind ~= "install" and data.kind ~= "update" then
+            return
+        end
+        local cargo_bin = vim.fn.expand("~/.cargo/bin")
+        local env = vim.fn.environ()
+        env.PATH = cargo_bin .. ":" .. (env.PATH or "")
+        local result = vim.system({ "sh", "install.sh", "1" }, {
+            cwd = data.path,
+            env = env,
+        }):wait()
+        if result.code ~= 0 then
+            vim.notify("sniprun build failed:\n" .. (result.stderr or result.stdout or ""), vim.log.levels.ERROR)
+        end
+    end,
+})
+
 vim.pack.add({
     gh("nvim-lua/plenary.nvim"),          -- lua functions that many plugins use
     gh("christoomey/vim-tmux-navigator"), -- tmux & split window navigation
@@ -90,6 +116,9 @@ vim.pack.add({
 
     -- claude code
     gh("greggh/claude-code.nvim"),
+
+    -- snippet runner (Rust binary; compiled via PackChanged + install.sh)
+    gh("michaelb/sniprun"),
 })
 
 -- setup
@@ -104,6 +133,7 @@ require("plugin.telescope")
 require("plugin.test")
 require("plugin.conform")
 require("plugin.render-markdown")
+require("plugin.sniprun")
 require("xcodebuild").setup({})
 require("grug-far").setup({})
 require("claude-code").setup({
