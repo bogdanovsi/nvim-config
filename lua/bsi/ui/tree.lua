@@ -31,6 +31,8 @@ M.config = {
 
 local has_devicons, devicons = pcall(require, "nvim-web-devicons")
 local Provider = require("bsi.fs.provider")
+local create_fs = require("bsi.fs.create")
+local prune_fs = require("bsi.fs.prune")
 local system = require("bsi.system")
 
 --- Safely close a window, handling the "cannot close last window" (E444) case.
@@ -503,11 +505,8 @@ function Tree:_open_system()
   if not node then
     return
   end
-  if system and system.open_url then
-    system.open_url(node.path)
-  else
-    vim.notify("bsi.system not available for system open", vim.log.levels.WARN)
-  end
+
+  system.open_url(node.path)
 end
 
 function Tree:_diff_file()
@@ -558,6 +557,7 @@ function Tree:_delete_node()
     if bufnr ~= -1 and vim.api.nvim_buf_is_valid(bufnr) then
       pcall(vim.api.nvim_buf_delete, bufnr, { force = true })
     end
+    prune_fs(self.root_path, vim.fn.fnamemodify(path, ":h"))
     self:refresh()
   else
     vim.notify("Failed to delete " .. label .. ": " .. path, vim.log.levels.ERROR)
@@ -600,37 +600,34 @@ function Tree:_add_file()
     or vim.fn.fnamemodify(node.path, ":h")
 
   vim.ui.input({
-    prompt = "New file (in " .. vim.fn.fnamemodify(target_dir, ":~:.") .. "): ",
-  }, function(name)
-    if not name or name == "" then
+    prompt = "New file: ",
+    default = create_fs.default_path(self.root_path, target_dir),
+    completion = "file",
+  }, function(input)
+    local result = create_fs(self.root_path, input)
+    if result.kind == "empty" then
       return
     end
-
-    local new_path = vim.fs.normalize(target_dir .. "/" .. name)
-    local parent = vim.fn.fnamemodify(new_path, ":h")
-    if vim.fn.isdirectory(parent) == 0 then
-      vim.fn.mkdir(parent, "p")
-    end
-
-    if vim.fn.filereadable(new_path) == 1 then
-      vim.notify("File already exists: " .. new_path, vim.log.levels.WARN)
+    if result.kind == "exists" then
+      vim.notify("Already exists: " .. (result.path or input), vim.log.levels.WARN)
       return
     end
-
-    local fd = io.open(new_path, "w")
-    if not fd then
-      vim.notify("Failed to create file: " .. new_path, vim.log.levels.ERROR)
+    if not result.ok then
+      vim.notify("Failed to create: " .. (result.err or result.path or "unknown"), vim.log.levels.ERROR)
       return
     end
-    fd:close()
 
     self:refresh()
-    self:find_file(new_path)
+    if result.path then
+      self:find_file(result.path)
+    end
 
-    vim.schedule(function()
-      vim.cmd("wincmd l")
-      vim.cmd("edit " .. vim.fn.fnameescape(new_path))
-    end)
+    if result.kind == "file" and result.path then
+      vim.schedule(function()
+        vim.cmd("wincmd l")
+        vim.cmd("edit " .. vim.fn.fnameescape(result.path))
+      end)
+    end
   end)
 end
 
@@ -708,12 +705,17 @@ function Tree:rename_or_move()
     if not new_path or new_path == "" or new_path == current then
       return
     end
+    local old_parent = vim.fn.fnamemodify(current, ":h")
     local success, err = self:_move_path(current, new_path)
     if not success then
       vim.notify("Failed to move/rename: " .. (err or "unknown error"), vim.log.levels.ERROR)
       return
     end
     vim.notify(string.format("Moved/Renamed:\n  %s\n→ %s", current, new_path), vim.log.levels.INFO)
+    local new_parent = vim.fn.fnamemodify(vim.fs.normalize(new_path), ":h")
+    if vim.fs.normalize(old_parent) ~= vim.fs.normalize(new_parent) then
+      prune_fs(self.root_path, old_parent)
+    end
     self:refresh()
   end)
 end
