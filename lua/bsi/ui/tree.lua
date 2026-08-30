@@ -1,7 +1,6 @@
 -- lua/bsi/ui/tree.lua
--- BSI Tree: fast filesystem-only embedded file tree (no git status tracking).
--- Git decorations (porcelain status, numstat, gitignore snapshot) were removed
--- because they lag badly on repos with large working trees / huge change sets.
+-- BSI Tree: filesystem file tree with scan-based gitignore greying and async +N-M.
+-- No porcelain status, directory AMD summaries, git-only mode, or Project watchers.
 
 local M = {}
 
@@ -34,6 +33,9 @@ local Provider = require("bsi.fs.provider")
 local create_fs = require("bsi.fs.create")
 local prune_fs = require("bsi.fs.prune")
 local system = require("bsi.system")
+local git_ignore = require("bsi.git.ignore")
+local git_numstat = require("bsi.git.numstat")
+local git_amd = require("bsi.git.amd")
 
 --- Safely close a window, handling the "cannot close last window" (E444) case.
 local function safe_close_win(winid)
@@ -57,6 +59,10 @@ end
 ---@field depth integer
 ---@field expanded boolean
 ---@field children bsi.Node[]|nil
+---@field git_ignored boolean|nil
+---@field git_numstat { added: integer, deleted: integer }|nil
+---@field git_letter "A"|"M"|"D"|nil
+---@field git_status_summary string|nil
 
 ---@class bsi.TreeState
 ---@field root bsi.Node
@@ -69,11 +75,10 @@ function Renderer.new()
   return setmetatable({}, Renderer)
 end
 
---- Renders the provided nodes into the buffer with indentation, icons, and highlights
----@param bufnr integer
+--- Build buffer lines and highlight specs (no window required).
 ---@param nodes bsi.Node[]
----@param winid integer|nil
-function Renderer:render(bufnr, nodes, winid)
+---@return { lines: string[], highlights: table[] }
+function Renderer:build(nodes)
   local lines = {}
   local highlights = {}
   local indent_cache = { ["0"] = "", ["1"] = " ", ["2"] = "  ", ["3"] = "   ", ["4"] = "    " }
@@ -118,7 +123,23 @@ function Renderer:render(bufnr, nodes, winid)
       end
     end
 
-    local line_content = table.concat({ indent, arrow, icon, " ", node.name })
+    local numstat_part = ""
+    local letter_part = ""
+    if not node.git_ignored then
+      if node.type == "file" then
+        if node.git_numstat then
+          numstat_part = git_numstat.format(node.git_numstat.added, node.git_numstat.deleted)
+        end
+        if node.git_letter then
+          letter_part = " " .. node.git_letter
+        end
+      elseif node.git_status_summary and node.git_status_summary ~= "" then
+        letter_part = " " .. node.git_status_summary
+      end
+    end
+    local detail = numstat_part .. letter_part
+
+    local line_content = table.concat({ indent, arrow, icon, " ", node.name, detail })
     table.insert(lines, line_content)
 
     if is_current then
@@ -131,24 +152,93 @@ function Renderer:render(bufnr, nodes, winid)
     local icon_start = arrow_end
     local icon_end = icon_start + #icon
     local name_start = icon_end + 1
+    local name_end = name_start + #node.name
 
-    if icon_hl then
-      table.insert(highlights, { hl = icon_hl, line = i - 1, col_start = icon_start, col_end = icon_end })
-    end
-    if name_hl then
+    if node.git_ignored then
       table.insert(highlights, {
-        hl = name_hl,
+        hl = "BSITreeGitIgnored",
         line = i - 1,
-        col_start = name_start,
-        col_end = name_start + #node.name,
+        col_start = arrow_start,
+        col_end = name_end,
       })
+    else
+      if icon_hl then
+        table.insert(highlights, { hl = icon_hl, line = i - 1, col_start = icon_start, col_end = icon_end })
+      end
+      if name_hl then
+        table.insert(highlights, {
+          hl = name_hl,
+          line = i - 1,
+          col_start = name_start,
+          col_end = name_end,
+        })
+      end
+      if numstat_part ~= "" then
+        local detail_start = name_end
+        local first = numstat_part:sub(2, 2)
+        if first == "+" then
+          local hyphen = numstat_part:find("-", 3, true) or (#numstat_part + 1)
+          local split = detail_start + hyphen - 1
+          table.insert(highlights, {
+            hl = "BSITreeGitAdded",
+            line = i - 1,
+            col_start = detail_start + 1,
+            col_end = split,
+          })
+          if hyphen <= #numstat_part then
+            table.insert(highlights, {
+              hl = "BSITreeGitDeleted",
+              line = i - 1,
+              col_start = split,
+              col_end = detail_start + #numstat_part,
+            })
+          end
+        elseif first == "-" then
+          table.insert(highlights, {
+            hl = "BSITreeGitDeleted",
+            line = i - 1,
+            col_start = detail_start + 1,
+            col_end = detail_start + #numstat_part,
+          })
+        end
+      end
+      if letter_part ~= "" then
+        local letter_hl = {
+          A = "BSITreeGitAdded",
+          M = "BSITreeGitModified",
+          D = "BSITreeGitDeleted",
+        }
+        local letters = letter_part:sub(2)
+        local col = name_end + #numstat_part + 1
+        for j = 1, #letters do
+          local ch = letters:sub(j, j)
+          local hl = letter_hl[ch]
+          if hl then
+            table.insert(highlights, {
+              hl = hl,
+              line = i - 1,
+              col_start = col + j - 1,
+              col_end = col + j,
+            })
+          end
+        end
+      end
     end
   end
 
+  return { lines = lines, highlights = highlights }
+end
+
+--- Renders the provided nodes into the buffer with indentation, icons, and highlights
+---@param bufnr integer
+---@param nodes bsi.Node[]
+---@param winid integer|nil
+function Renderer:render(bufnr, nodes, winid)
+  local built = self:build(nodes)
   vim.bo[bufnr].modifiable = true
-  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, built.lines)
   vim.api.nvim_buf_clear_namespace(bufnr, ns_id, 0, -1)
-  for _, hl in ipairs(highlights) do
+  for _, hl in ipairs(built.highlights) do
     vim.api.nvim_buf_add_highlight(bufnr, ns_id, hl.hl, hl.line, hl.col_start, hl.col_end)
   end
   vim.bo[bufnr].modifiable = false
@@ -188,6 +278,11 @@ function Tree.new(opts)
     max_depth = initial_max_depth,
   }
 
+  self._ignore = opts.ignore or git_ignore
+  self._numstat = opts.numstat or git_numstat
+  self._amd = opts.amd or git_amd
+  self._git_gen = 0
+
   local root = self.provider:scan(self.root_path, 0, self._scan_opts)
   self.state = {
     root = root or {
@@ -203,7 +298,142 @@ function Tree.new(opts)
   self._visible_dirty = true
   self.bufnr = opts.bufnr
   self.winid = opts.winid
+  self:_annotate()
+  self:_fetch_git()
   return self
+end
+
+function Tree:_annotate()
+  if self.state and self.state.root and self._ignore then
+    self._ignore.annotate(self.state.root)
+  end
+end
+
+function Tree:_stamp_numstat(node, map)
+  if node.type == "file" then
+    if node.git_ignored then
+      node.git_numstat = nil
+    else
+      node.git_numstat = map[node.path]
+    end
+  end
+  for _, child in ipairs(node.children or {}) do
+    self:_stamp_numstat(child, map)
+  end
+end
+
+function Tree:_fetch_git()
+  self._git_gen = (self._git_gen or 0) + 1
+  local gen = self._git_gen
+  self:_fetch_numstat(gen)
+  self:_fetch_amd(gen)
+end
+
+function Tree:_fetch_numstat(gen)
+  gen = gen or self._git_gen
+  local fetch = self._numstat and self._numstat.fetch_async
+  if not fetch then
+    return
+  end
+  fetch(self.root_path, function(map)
+    if gen ~= self._git_gen then
+      return
+    end
+    if type(map) ~= "table" then
+      return
+    end
+    self:_stamp_numstat(self.state.root, map)
+    self._visible_dirty = true
+    if self.bufnr and vim.api.nvim_buf_is_valid(self.bufnr) then
+      self:render()
+    end
+  end)
+end
+
+function Tree:_fetch_amd(gen)
+  gen = gen or self._git_gen
+  local fetch = self._amd and self._amd.fetch_async
+  if not fetch then
+    return
+  end
+  fetch(self.root_path, function(map)
+    if gen ~= self._git_gen then
+      return
+    end
+    if type(map) ~= "table" then
+      return
+    end
+    self._amd_map = map
+    self._amd.stamp(self.state.root, map)
+    self._visible_dirty = true
+    if self.bufnr and vim.api.nvim_buf_is_valid(self.bufnr) then
+      self:render()
+    end
+  end)
+end
+
+local function merge_chain_name(display_name, old_path, scanned_name)
+  local last = vim.fn.fnamemodify(old_path, ":t")
+  if last ~= "" and #display_name >= #last and display_name:sub(-#last) == last then
+    return display_name:sub(1, #display_name - #last) .. scanned_name
+  end
+  if display_name == scanned_name or scanned_name:sub(1, #display_name + 1) == display_name .. "/" then
+    return scanned_name
+  end
+  return display_name .. "/" .. scanned_name
+end
+
+function Tree:_load_directory(node)
+  local guard = {}
+  while true do
+    if guard[node.path] then
+      break
+    end
+    guard[node.path] = true
+    local scanned = self.provider:scan(node.path, node.depth, {
+      show_ignored = self.show_ignored,
+    })
+    if not scanned then
+      node.children = node.children or {}
+      break
+    end
+    if scanned.path ~= node.path then
+      node.name = merge_chain_name(node.name, node.path, scanned.name)
+      node.path = scanned.path
+      node.id = scanned.id
+    end
+    node.children = scanned.children or {}
+    node._unpopulated = scanned._unpopulated and true or false
+
+    local dirs = {}
+    local nfiles = 0
+    for _, c in ipairs(node.children) do
+      if c.type == "directory" then
+        dirs[#dirs + 1] = c
+      else
+        nfiles = nfiles + 1
+      end
+    end
+    -- Stop on the last directory that actually contains files.
+    if nfiles > 0 then
+      break
+    end
+    if #dirs == 1 then
+      local child = dirs[1]
+      node.name = node.name .. "/" .. child.name
+      node.path = child.path
+      node.id = child.id
+      node.children = child.children or {}
+      node._unpopulated = child._unpopulated and true or false
+    else
+      break
+    end
+  end
+  node._unpopulated = false
+  self:_annotate()
+  if self._amd_map and self._amd then
+    self._amd.stamp(self.state.root, self._amd_map)
+  end
 end
 
 ---@return string
@@ -374,9 +604,23 @@ end
 --- Re-scan filesystem, preserving expansion state
 function Tree:refresh()
   local expanded = {}
+  local function mark_expanded(path)
+    if path and path ~= "" then
+      expanded[path] = true
+    end
+  end
   local function collect(node)
     if node.expanded then
-      expanded[node.id] = true
+      mark_expanded(node.id)
+      mark_expanded(node.path)
+      -- Collapsed "foo/bar" lives at bar's path; parent foo must also reload.
+      if node.name and node.name:find("/") then
+        local p = node.path
+        for _ in node.name:gmatch("/") do
+          p = vim.fn.fnamemodify(p, ":h"):gsub("/$", "")
+          mark_expanded(p)
+        end
+      end
     end
     if node.children then
       for _, child in ipairs(node.children) do
@@ -385,15 +629,16 @@ function Tree:refresh()
     end
   end
   collect(self.state.root)
+  expanded[self.root_path] = true
 
   self._refreshing = true
   self:_update_winbar()
 
+  -- Same bound as first open; expanded dirs are filled by populate_expanded.
   local scan_opts = {
     expand_all = self.opts and self.opts.expand_all,
     show_ignored = self.show_ignored,
-    -- Full-depth on refresh so expanded dirs can be restored with children
-    max_depth = nil,
+    max_depth = (self.opts and self.opts.expand_all) and nil or 1,
   }
   local new_root = self.provider:scan(self.root_path, 0, scan_opts)
   new_root = new_root
@@ -407,33 +652,61 @@ function Tree:refresh()
       children = {},
     }
 
+  local function should_expand(node)
+    return expanded[node.id] or expanded[node.path] or (self.opts and self.opts.expand_all)
+  end
+
   local function restore(node)
-    if expanded[node.id] or (self.opts and self.opts.expand_all) then
+    if should_expand(node) then
       node.expanded = true
-      if node.children then
-        for _, child in ipairs(node.children) do
-          restore(child)
-        end
+    end
+    if node.children then
+      for _, child in ipairs(node.children) do
+        restore(child)
       end
     end
   end
   restore(new_root)
+  new_root.expanded = true
 
-  -- Populate any restored expanded dirs that are still stubs
+  local scan_one = {
+    show_ignored = self.show_ignored,
+  }
+
+  -- Reload expanded stubs. If scan collapses foo → foo/bar, follow the new path.
   local function populate_expanded(node)
     if (node.type == "directory" or node.type == "root") and node.expanded then
-      local needs = (not node.children or #node.children == 0) or node._unpopulated
-      if needs then
-        local sc = self.provider:scan(node.path, node.depth, {
-          show_ignored = self.show_ignored,
-        })
-        if sc and sc.children then
-          node.children = sc.children
+      local guard = {}
+      while node._unpopulated or node.children == nil do
+        if guard[node.path] then
+          break
         end
-        node._unpopulated = false
+        guard[node.path] = true
+        local sc = self.provider:scan(node.path, node.depth, scan_one)
+        if not sc then
+          node._unpopulated = false
+          node.children = node.children or {}
+          break
+        end
+        -- Scan may collapse foo → foo/bar (new path). Don't rename when
+        -- re-scanning an already-collapsed node (path unchanged, name "bar").
+        if sc.path ~= node.path then
+          node.name = sc.name
+          node.path = sc.path
+          node.id = sc.id
+        end
+        node.children = sc.children or {}
+        node._unpopulated = sc._unpopulated and true or false
       end
-    end
-    if node.children then
+      if node.children then
+        for _, child in ipairs(node.children) do
+          if should_expand(child) then
+            child.expanded = true
+          end
+          populate_expanded(child)
+        end
+      end
+    elseif node.children then
       for _, child in ipairs(node.children) do
         populate_expanded(child)
       end
@@ -442,6 +715,8 @@ function Tree:refresh()
   populate_expanded(new_root)
 
   self.state.root = new_root
+  self:_annotate()
+  self:_fetch_git()
   self._visible_dirty = true
   self._refreshing = false
 
@@ -469,13 +744,7 @@ function Tree:toggle()
   if not node.expanded and node.type == "directory" then
     local needs_load = (node.children and #node.children == 0) or node._unpopulated
     if needs_load then
-      local scanned = self.provider:scan(node.path, node.depth, {
-        show_ignored = self.show_ignored,
-      })
-      if scanned and scanned.children then
-        node.children = scanned.children
-        node._unpopulated = false
-      end
+      self:_load_directory(node)
     end
   end
   node.expanded = not node.expanded
@@ -748,13 +1017,7 @@ function Tree:find_file(target_path)
       if target:sub(1, #node.path) == node.path then
         if not node.expanded then
           if (node.children and #node.children == 0) or node._unpopulated then
-            local scanned = self.provider:scan(node.path, node.depth, {
-              show_ignored = self.show_ignored,
-            })
-            if scanned and scanned.children then
-              node.children = scanned.children
-              node._unpopulated = false
-            end
+            self:_load_directory(node)
           end
           node.expanded = true
         end
@@ -987,6 +1250,10 @@ function M.setup(opts)
   vim.api.nvim_set_hl(0, "BSITreeCurrentFile", { bg = "#3b4261", bold = true })
   vim.api.nvim_set_hl(0, "BSITreeOpenedFile", { fg = "#7aa2f7", italic = true })
   vim.api.nvim_set_hl(0, "BSITreeCursorLine", { bg = "#2e3a4a" })
+  vim.api.nvim_set_hl(0, "BSITreeGitIgnored", { fg = "#5c6370", bg = "NONE" })
+  vim.api.nvim_set_hl(0, "BSITreeGitAdded", { fg = "#9ece6a", bg = "NONE" })
+  vim.api.nvim_set_hl(0, "BSITreeGitModified", { fg = "#e0af68", bg = "NONE" })
+  vim.api.nvim_set_hl(0, "BSITreeGitDeleted", { fg = "#f7768e", bg = "NONE" })
 
   local group = vim.api.nvim_create_augroup("BSITreeTracking", { clear = true })
   vim.api.nvim_create_autocmd("BufEnter", {
@@ -1027,5 +1294,8 @@ function M.setup(opts)
     M.new({ root = root }):open()
   end, { nargs = "?", complete = "dir" })
 end
+
+M.Renderer = Renderer
+M.Tree = Tree
 
 return M

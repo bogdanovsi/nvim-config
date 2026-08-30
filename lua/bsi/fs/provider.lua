@@ -185,10 +185,14 @@ local function collapse_single_child(node)
     return
   end
   local child = node.children[1]
+  local unpopulated = child._unpopulated
   node.name = node.name .. "/" .. child.name
-  node.children = child.children
+  node.children = child.children or {}
   node.path = child.path
   node.id = child.id
+  if unpopulated then
+    node._unpopulated = true
+  end
   local function sync_depth(n, d)
     n.depth = d
     if n.children then
@@ -202,6 +206,42 @@ local function collapse_single_child(node)
       sync_depth(c, node.depth + 1)
     end
   end
+end
+
+--- Follow a chain of directories that contain only one subdirectory and no files.
+--- Stops at the last directory that has files (or at a dead-end empty dir).
+---@return string display_name
+---@return string leaf_path
+function Provider:_follow_empty_chain(path, name, opts)
+  local display = name
+  local cur = path
+  local guard = {}
+  while true do
+    if guard[cur] then
+      break
+    end
+    guard[cur] = true
+    local nfiles, ndirs = 0, 0
+    local only_dir
+    for _, e in ipairs(self:_list_entries(cur, opts)) do
+      if e.type == "directory" then
+        ndirs = ndirs + 1
+        only_dir = e
+      else
+        nfiles = nfiles + 1
+      end
+    end
+    if nfiles > 0 then
+      break
+    end
+    if ndirs == 1 and only_dir then
+      display = display .. "/" .. only_dir.name
+      cur = cur .. "/" .. only_dir.name
+    else
+      break
+    end
+  end
+  return display, cur
 end
 
 --- Scans a directory path to build a tree of bsi.Node objects.
@@ -239,10 +279,11 @@ function Provider:scan(path, depth, opts)
     if is_dir then
       local at_max_depth = max_d and (depth + 1 > max_d)
       if at_max_depth and not expand_all then
+        local display, leaf = self:_follow_empty_chain(fullpath, entry.name, opts)
         child = {
-          id = fullpath,
-          name = entry.name,
-          path = fullpath,
+          id = leaf,
+          name = display,
+          path = leaf,
           type = "directory",
           depth = depth + 1,
           expanded = false,

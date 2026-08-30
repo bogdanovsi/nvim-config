@@ -12,14 +12,17 @@ Modern, embedded **filesystem-only** file tree for the BSI Neovim UI layer.
 
 The BSI Tree provides a lightweight, fast file tree that can be opened as a sidebar. It is **not** a replacement for `nvim-tree` (which is also installed); it is a purpose-built component for quick navigation.
 
-**No git status tracking.** Porcelain status, numstat `+N-M` deltas, gitignore snapshots, Project watchers, and git-only mode were removed. They caused lag on repos with large change sets (expensive `git status --porcelain -z --ignored=matching -u`, untracked-dir expansion, and full-tree re-scan/re-render when data arrived).
+Gitignore greying, file `+N-M`, and A/M/D letters come back **without** `--ignored=matching`. `.gitignore` files found in the filesystem scan mark matching nodes (`git_ignored`); those rows render grey (`BSITreeGitIgnored`). Staged + unstaged `git diff --numstat` attach asynchronously as ` +23-23` / ` +N` / ` -M`. Light `git status --porcelain=v1 -z` (no ignored matching) stamps a file A/M/D postfix and aggregates **DMA** after directory names. No `--ignored=matching`, no untracked-dir expansion, no Project watchers, no git-only mode, and git data does not re-scan the filesystem.
 
 Key characteristics:
 - Clean three-class architecture (Renderer / Provider / Tree)
 - Synchronous bounded FS scan for instant open
+- Gitignore annotation from scanned `.gitignore` files (no git subprocess)
+- Async `+N-M` on dirty files after the listing is already shown
+- File A/M/D postfix and directory DMA summary (async, after the listing)
 - Lazy expansion of directories on demand
 - Automatic current-file tracking across open tree instances
-- Name-based ignore list only (no git processes)
+- Name-based skip of `node_modules` / `vendor` / … (`h` toggle); gitignored files stay listed and grey
 
 ---
 
@@ -52,9 +55,11 @@ The tree never writes to the filesystem except through explicit user actions (`a
 ---@field _unpopulated boolean|nil  -- stub dir, populated on expand
 ---@field _icon string|nil
 ---@field _icon_hl string|nil
+---@field git_ignored boolean|nil
+---@field git_numstat { added: integer, deleted: integer }|nil
 ```
 
-No `git_status`, `git_numstat`, `git_status_summary`, or `git_ignored` fields.
+No porcelain `git_status` or directory `git_status_summary`. `git_ignored` comes from scanned `.gitignore` files. `git_numstat` is async file `+N-M`.
 
 ---
 
@@ -65,6 +70,7 @@ No `git_status`, `git_numstat`, `git_status_summary`, or `git_ignored` fields.
 - Bounded initial depth (root direct children only); deeper dirs are stubs until expanded
 - Name-based ignore (when `show_ignored=false`): `node_modules`, `vendor`, `dist`, `build`, `target`, and `.git`
 - **Dotfiles** always included (except `.git` when hidden)
+- Gitignored scanned files stay listed and render grey
 - Single-child directory collapsing (`foo/bar/baz`)
 
 ### 2. Expansion & Visibility
@@ -149,23 +155,21 @@ Global:
 - `BSITreeCursorLine` — native cursorline in tree window
 - `BSITreeOpenedFile` — defined, unused
 - `BSITreeTitle` — winbar
-
-Git-related highlight groups (`BSITreeGitAdded` etc.) are no longer defined by the tree.
-
----
-
-## Why git tracking was removed
-
-With large dirty working trees the old path did roughly:
-
-1. Quick FS scan (fast)
-2. Async: `git status --porcelain=v1 -z --ignored=matching -u` (can be huge)
-3. Async: untracked-directory full expansion
-4. Async: `git diff --numstat` × 2 (staged + unstaged)
-5. Re-scan / decorate entire tree + re-render when all three finished
-
-Steps 2–5 blocked interactivity and re-rendered thrashing on big change sets. Gitsigns / Diffview / Telescope remain available for git work; the tree stays a pure navigator.
+- `BSITreeGitIgnored` — grey gitignored file/dir row
+- `BSITreeGitAdded` / `BSITreeGitModified` / `BSITreeGitDeleted` — `+N` / A/M/D postfix / `-M` and directory DMA
 
 ---
 
-*Updated 2026-08: git status tracking fully removed from bsi.ui.tree.*
+## Git decorations (current)
+
+1. Quick FS scan (fast, name-based skip)
+2. Annotate from `.gitignore` files in the scan result (no `git status`)
+3. Async: `git diff --numstat` + `git diff --cached --numstat`
+4. Async: light `git status --porcelain=v1 -z` (no `--ignored=matching`) → file A/M/D postfix and directory DMA
+5. Stamp existing nodes and re-render (no filesystem re-scan)
+
+`--ignored=matching`, untracked expansion, and Project watchers stay gone.
+
+---
+
+*Updated 2026-08: scan-based gitignore greying, async file `+N-M`, file A/M/D postfix, directory DMA.*

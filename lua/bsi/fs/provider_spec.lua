@@ -151,6 +151,37 @@ describe("bsi.fs.provider", function()
       assert.equals("baz.txt", collapsed.children[1].name)
       assert.equals("file", collapsed.children[1].type)
     end)
+
+    it("collapses an empty nested dir chain into one stub named through the last dir", function()
+      tmp = new_tmp()
+      mkdir(tmp .. "/foo/bar")
+      local root = Provider.new():scan(tmp, 0, {})
+      local foo = child_name_set(root)["foo"] or child_name_set(root)["foo/bar"]
+      assert.is_not_nil(foo)
+      assert.equals("foo/bar", foo.name)
+      assert.is_true(foo._unpopulated)
+    end)
+
+    it("one-level stub follows empty dirs to the last dir that has files", function()
+      tmp = new_tmp()
+      mkdir(tmp .. "/foo/bar")
+      touch(tmp .. "/foo/bar/baz.txt")
+      local root = Provider.new():scan(tmp, 0, {})
+      local foo = child_name_set(root)["foo"] or child_name_set(root)["foo/bar"]
+      assert.is_not_nil(foo)
+      assert.equals("foo/bar", foo.name)
+      assert.equals(foo.path:sub(-4), "/bar")
+      assert.is_true(foo._unpopulated)
+    end)
+
+    it("keeps _unpopulated when collapsing into a stub child", function()
+      tmp = new_tmp()
+      mkdir(tmp .. "/foo/bar")
+      touch(tmp .. "/foo/bar/baz.txt")
+      local foo = Provider.new():scan(tmp .. "/foo", 1, {})
+      assert.equals("foo/bar", foo.name)
+      assert.is_true(foo._unpopulated)
+    end)
   end)
 
   describe("missing path and node shape", function()
@@ -229,7 +260,7 @@ describe("bsi.fs.provider", function()
       for _, c in ipairs(root.children) do
         if c.type == "file" then
           files = files + 1
-        elseif c.name == "sub" then
+        elseif c.name == "sub" or c.name:match("^sub/") then
           sub = c
         end
       end
@@ -278,7 +309,7 @@ describe("bsi.fs.provider", function()
         for _, c in ipairs(root.children) do
           if c.type == "file" then
             files = files + 1
-          elseif c.name == "sub" then
+          elseif c.name == "sub" or c.name:match("^sub/") then
             sub = c
           end
         end
