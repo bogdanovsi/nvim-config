@@ -26,7 +26,43 @@ M.config = {
   -- Dotfiles (names starting with ".") are always included except .git when hidden.
   -- Toggle with 'h' inside the tree.
   show_ignored = false,
+  -- Auto window width (columns) from the longest visible row, clamped here.
+  width_min = 30,
+  width_max = 100,
 }
+
+---@param lines string[]
+---@return integer
+function M.needed_width(lines)
+  local n = 0
+  for _, line in ipairs(lines or {}) do
+    local w = vim.fn.strdisplaywidth(line)
+    if w > n then
+      n = w
+    end
+  end
+  return n + 1
+end
+
+---@param needed integer
+---@param min integer|nil
+---@param max integer|nil
+---@return integer
+function M.clamped_width(needed, min, max)
+  min = min or M.config.width_min or 30
+  max = max or M.config.width_max or 100
+  if min > max then
+    min = max
+  end
+  needed = needed or 0
+  if needed < min then
+    return min
+  end
+  if needed > max then
+    return max
+  end
+  return needed
+end
 
 local has_devicons, devicons = pcall(require, "nvim-web-devicons")
 local Provider = require("bsi.fs.provider")
@@ -247,7 +283,9 @@ function Renderer:render(bufnr, nodes, winid)
   if winid and vim.api.nvim_win_is_valid(winid) then
     vim.api.nvim_set_option_value("number", false, { win = winid })
     vim.api.nvim_set_option_value("relativenumber", false, { win = winid })
+    pcall(vim.api.nvim_set_option_value, "wrap", false, { win = winid })
   end
+  return built
 end
 
 ---@class bsi.Tree
@@ -282,6 +320,7 @@ function Tree.new(opts)
   self._numstat = opts.numstat or git_numstat
   self._amd = opts.amd or git_amd
   self._git_gen = 0
+  self._width_manual = false
 
   local root = self.provider:scan(self.root_path, 0, self._scan_opts)
   self.state = {
@@ -470,12 +509,71 @@ function Tree:render()
 
   local now = (vim.uv and vim.uv.now and vim.uv.now()) or 0
   if not self._visible_dirty and self._last_render_ms and (now - self._last_render_ms) < 60 then
+    self:_apply_width()
     return
   end
   self._last_render_ms = now
 
   self.visible_nodes = self:get_visible_nodes()
-  self.renderer:render(self.bufnr, self.visible_nodes, self.winid)
+  local built = self.renderer:render(self.bufnr, self.visible_nodes, self.winid)
+  self._last_lines = built and built.lines or {}
+  self:_apply_width()
+  -- Layout may not have settled until the next tick (split/expand).
+  vim.schedule(function()
+    self:_apply_width()
+  end)
+end
+
+function Tree:_width_bounds()
+  local min = M.config.width_min or 30
+  local max = M.config.width_max or 100
+  if min > max then
+    min = max
+  end
+  return min, max
+end
+
+function Tree:_apply_width()
+  if self._width_manual then
+    return
+  end
+  if not self.winid or not vim.api.nvim_win_is_valid(self.winid) then
+    return
+  end
+  local min, max = self:_width_bounds()
+  local needed = M.needed_width(self._last_lines or {})
+  local w = M.clamped_width(needed, min, max)
+  if vim.api.nvim_win_get_width(self.winid) ~= w then
+    vim.api.nvim_win_set_width(self.winid, w)
+  end
+end
+
+function Tree:nudge_width(delta)
+  self._width_manual = true
+  if not self.winid or not vim.api.nvim_win_is_valid(self.winid) then
+    return
+  end
+  local min = select(1, self:_width_bounds())
+  local cap = math.max(min, (vim.o.columns or 120) - 1)
+  local cur = vim.api.nvim_win_get_width(self.winid)
+  local w = cur + (delta or 0)
+  if w < min then
+    w = min
+  end
+  if w > cap then
+    w = cap
+  end
+  if cur ~= w then
+    vim.api.nvim_win_set_width(self.winid, w)
+  end
+end
+
+function Tree:expand_width()
+  self:nudge_width(3)
+end
+
+function Tree:restore_width()
+  self:nudge_width(-3)
 end
 
 function Tree:_update_winbar()
@@ -512,15 +610,14 @@ function Tree:open()
   M.instances[self.bufnr] = self
   pcall(vim.api.nvim_buf_set_name, self.bufnr, "BSITree")
 
-  if is_new_win then
-    vim.api.nvim_win_set_width(self.winid, 40)
-  end
+  self._width_manual = false
 
   if self.winid and vim.api.nvim_win_is_valid(self.winid) then
     vim.api.nvim_set_option_value("cursorline", true, { win = self.winid })
     vim.api.nvim_set_option_value("winhighlight", "CursorLine:BSITreeCursorLine", { win = self.winid })
     -- Forbid replacing the tree buffer in this window (Telescope/edit must use another win)
     pcall(vim.api.nvim_set_option_value, "winfixbuf", true, { win = self.winid })
+    pcall(vim.api.nvim_set_option_value, "winfixwidth", true, { win = self.winid })
   end
 
   self:render()
@@ -546,6 +643,12 @@ function Tree:open()
     end,
   })
 
+  map(">", function()
+    self:nudge_width(3)
+  end, "Widen tree by 3 columns")
+  map("<", function()
+    self:nudge_width(-3)
+  end, "Narrow tree by 3 columns")
   map("R", function()
     self:refresh()
   end, "Refresh")
@@ -717,6 +820,7 @@ function Tree:refresh()
   self.state.root = new_root
   self:_annotate()
   self:_fetch_git()
+  self._width_manual = false
   self._visible_dirty = true
   self._refreshing = false
 
@@ -748,6 +852,7 @@ function Tree:toggle()
     end
   end
   node.expanded = not node.expanded
+  self._width_manual = false
   self._visible_dirty = true
   self:render()
 end
@@ -1034,6 +1139,7 @@ function Tree:find_file(target_path)
   end
 
   expand_recursive(self.state.root, target_path)
+  self._width_manual = false
   self._visible_dirty = true
   self:render()
 

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Provide a filesystem-only directory scanner that the BSI tree UI consumes: bounded, ignore-aware, independent of windows and icons, and fast enough that large folders stay interactive.
+Provide a filesystem-only file tree sidebar for the BSI Neovim UI. A bounded, ignore-aware directory scanner feeds a left-split listing that navigates, creates, moves, and deletes paths, shows gitignore and dirty-file decorations without a git-only mode, and stays interactive on large folders.
 
 ## Requirements
 
@@ -459,3 +459,186 @@ After prune runs as part of delete or move, the tree SHALL refresh so removed di
 
 - **WHEN** the user deletes the last file in a nested empty chain
 - **THEN** the tree no longer lists those empty directories
+
+### Requirement: Tree window width follows visible indent and names
+
+The tree window width SHALL be the maximum display width of currently visible rows (indent + arrow + icon + name and any git postfix), clamped to a configurable minimum and maximum. Defaults SHALL be 30 and 100 columns. Changing which rows are visible (open, expand, collapse, refresh) SHALL recompute the width while auto-fit is on.
+
+#### Scenario: Short names use the minimum
+
+- **WHEN** every visible row is shorter than 30 columns
+- **AND** auto-fit is on
+- **THEN** the tree window width is 30
+
+#### Scenario: Medium names auto-size inside the band
+
+- **WHEN** the longest visible row is 45 columns
+- **AND** min is 30 and max is 100
+- **AND** auto-fit is on
+- **THEN** the tree window width is 45
+
+#### Scenario: Deep indent plus long name still auto-fits under the max
+
+- **WHEN** indent and name together are 52 columns
+- **AND** auto-fit is on
+- **THEN** the window width is 52
+
+### Requirement: Width min and max are configurable
+
+`width_min` and `width_max` SHALL be tree config (defaults 30 and 100). Auto-fit SHALL use those bounds. If min is greater than max, the system SHALL treat them as the same number (no inverted range).
+
+#### Scenario: Custom max
+
+- **WHEN** config sets `width_max` to 80
+- **AND** the longest visible row is 70 columns
+- **AND** auto-fit is on
+- **THEN** the window width is 70
+
+### Requirement: Content longer than max stays capped until the user expands
+
+If the longest visible row is wider than `width_max`, auto-fit SHALL set the window to `width_max` and SHALL NOT grow past it. The user SHALL be able to expand the tree window past the max to fit that content, and to return to auto-fit.
+
+#### Scenario: Over max stays at max
+
+- **WHEN** the longest visible row is 120 columns
+- **AND** `width_max` is 100
+- **AND** auto-fit is on
+- **THEN** the window width is 100
+
+#### Scenario: Manual expand past max
+
+- **WHEN** the longest visible row is 120 columns
+- **AND** the user expands the tree window manually
+- **THEN** the window is at least as wide as that row
+
+#### Scenario: Return to auto-fit
+
+- **WHEN** the user has expanded past max
+- **AND** they restore auto-fit
+- **THEN** the window width is again clamped to `[width_min, width_max]`
+
+### Requirement: Tree opens as a filesystem sidebar
+
+The system SHALL provide a filesystem-only file tree as a left sidebar. Toggling the tree SHALL open it when closed and close it when open. `:BSITree` with an optional directory SHALL open a tree at that path, or at the current working directory when omitted. Opening SHALL show the filesystem listing without waiting for git decorations.
+
+#### Scenario: Toggle opens and closes
+
+- **WHEN** the user toggles the tree and it is not open
+- **THEN** a left split shows the filesystem listing
+- **WHEN** they toggle again
+- **THEN** that tree window is closed
+
+#### Scenario: Command opens at a directory
+
+- **WHEN** the user runs `:BSITree` with a directory argument
+- **THEN** a tree opens with that directory as root
+
+### Requirement: Git-only tree mode is not offered
+
+The tree SHALL always list the filesystem. It MUST NOT switch to a listing of only git-changed files. The legacy git-mode mapping SHALL open or focus the same filesystem tree.
+
+#### Scenario: Legacy git-mode mapping
+
+- **WHEN** the user invokes the legacy git-mode mapping
+- **THEN** the filesystem tree opens or is already focused
+- **AND** the listing is not limited to git-changed files
+
+### Requirement: Tree window is not an edit target
+
+The tree buffer SHALL be a scratch non-file buffer. The tree window SHALL keep that buffer; an edit or picker MUST NOT replace it in place. Opening a file while the tree is focused SHALL land in a normal editor window.
+
+#### Scenario: File from a picker
+
+- **WHEN** the tree window is focused
+- **AND** the user opens a file from a picker
+- **THEN** the file opens in an editor window
+- **AND** the tree buffer remains in the tree window
+
+#### Scenario: Enter on a file
+
+- **WHEN** the cursor is on a file in the tree
+- **AND** the user presses Enter
+- **THEN** that file is opened in an editor window
+- **AND** the tree window still shows the tree
+
+### Requirement: Current file is revealed and highlighted
+
+When the user enters a real file buffer, open trees SHALL reveal that file if it is under the tree root and SHALL highlight its row. The tree MUST NOT treat its own buffer as the current file.
+
+#### Scenario: Switch to a project file
+
+- **WHEN** a tree is open
+- **AND** the user enters a file under the tree root
+- **THEN** that file’s row is visible
+- **AND** it uses the current-file highlight
+
+### Requirement: Trees refresh without losing expansion
+
+When buffers are added or deleted, open trees SHALL re-render. A manual refresh SHALL re-scan the filesystem and SHALL preserve which directories were expanded.
+
+#### Scenario: Manual refresh keeps expansion
+
+- **WHEN** directories A and B are expanded
+- **AND** the user refreshes the tree
+- **THEN** the listing is re-scanned
+- **AND** A and B remain expanded
+
+### Requirement: Enter toggles directories
+
+Enter on a directory SHALL expand or collapse it. Expanding an unpopulated directory SHALL load its children. Changing expansion SHALL recompute auto-fit width when auto-fit is on.
+
+#### Scenario: Expand a collapsed directory
+
+- **WHEN** the cursor is on a collapsed directory
+- **AND** the user presses Enter
+- **THEN** that directory’s children become visible
+
+### Requirement: Tree keys yank, open externally, diff, toggle ignored names, and close
+
+While the tree is focused: `y` SHALL yank the node name; `Y` SHALL yank the path relative to the tree root; `o` SHALL open the node with the system default application; `D` on a file SHALL open a git diff for that file; `h` SHALL toggle visibility of name-based ignored directories; `q` SHALL close the tree window. Add, rename-move, and delete SHALL use `a`, `r`/`u`, and `d` respectively.
+
+#### Scenario: Yank relative path
+
+- **WHEN** the cursor is on `src/app/page.tsx` under tree root `/proj`
+- **AND** the user presses `Y`
+- **THEN** the yanked text is `src/app/page.tsx`
+
+#### Scenario: Toggle ignored names
+
+- **WHEN** ignored names are hidden
+- **AND** the directory contains `node_modules`
+- **AND** the user presses `h`
+- **THEN** `node_modules` becomes visible
+
+#### Scenario: Close
+
+- **WHEN** the tree window is focused
+- **AND** the user presses `q`
+- **THEN** that tree window is closed
+
+### Requirement: Users can rename or move the node under the cursor
+
+`r` and `u` SHALL prompt to rename or move the node under the cursor. The submitted path SHALL be the destination. After a successful move, empty ancestors of the old path SHALL be pruned. An existing destination MUST NOT be overwritten.
+
+#### Scenario: Rename a file
+
+- **WHEN** the cursor is on `src/old.ts`
+- **AND** the user submits `src/new.ts`
+- **THEN** the file exists at `src/new.ts`
+- **AND** `src/old.ts` does not exist
+
+### Requirement: Users can nudge tree width by three columns
+
+`>` SHALL increase the tree window width by 3 columns, including past `width_max` up to the editor frame. `<` SHALL decrease it by 3 columns and MUST NOT go below `width_min`. After a nudge, auto-fit SHALL stay off until open, expand, collapse, refresh, or revealing the current file restores it.
+
+#### Scenario: Widen past max
+
+- **WHEN** auto-fit width is 100
+- **AND** the user presses `>`
+- **THEN** the window width is 103
+
+#### Scenario: Narrow not below min
+
+- **WHEN** the window width is 30
+- **AND** the user presses `<`
+- **THEN** the window width is 30
