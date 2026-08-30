@@ -113,6 +113,7 @@ vim.pack.add({
     { src = gh("nvim-neotest/neotest-go"), version = "05535cb2cfe3ce5c960f65784896d40109572f89" }, -- https://github.com/nvim-neotest/neotest-go/issues/57
     gh("andythigpen/nvim-coverage"),
     gh("stevearc/conform.nvim"),
+    gh("mfussenegger/nvim-lint"),
 
     -- claude code
     gh("greggh/claude-code.nvim"),
@@ -132,6 +133,7 @@ require("plugin.treesitter")
 require("plugin.telescope")
 require("plugin.test")
 require("plugin.conform")
+require("plugin.lint")
 require("plugin.render-markdown")
 require("plugin.sniprun")
 require("xcodebuild").setup({})

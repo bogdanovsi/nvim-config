@@ -34,13 +34,13 @@ function M.table_keys(t)
   local result = {}
 
   -- 1) collect sequence part values in order
-  for _, v in ipairs(tbl) do
+  for _, v in ipairs(t) do
     table.insert(result, v)
   end
 
   -- 2) collect string keys from the hash part
   local str_keys = {}
-  for k in pairs(tbl) do
+  for k in pairs(t) do
     if type(k) == "string" then
       table.insert(str_keys, k)
     end

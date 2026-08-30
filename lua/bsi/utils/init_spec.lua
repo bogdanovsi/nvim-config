@@ -17,8 +17,8 @@ describe("escape_quotes", function()
 
     it("escapes both single and double quotes", function()
         assert.are.equal(
-            'This is a 'test' and a "quote"',
-            M.escape_quotes("This is a 'test' and a "quote"")
+            "This is a 'test' and a \"quote\"",
+            M.escape_quotes("This is a 'test' and a \"quote\"")
         )
     end)
 

@@ -12,21 +12,26 @@
 --   end
 -- end
 
-local multiline_code_pattern = "^```(.*)```$";
-local multiline_line_pattern = "^```(.*)```$";
-local one_line_pattern = "(`{1,3}).*(`{1,3})";
-
+--- Strip markdown code fences. Lua patterns have no `{n,m}`, so fences are
+--- matched as ``` (optional language + newline) or wrapping ` / ``` pairs.
+---@param str string
+---@return string
 function strip_code(str)
-    -- Check for triple backticks with optional language specifier
-    local lang, code = string.match(str, "^%s*`{1,3}%s*(.-)%s*`{1,3}%s*$")
-    if code then
-        return code
+    -- ```lang\ncode\n``` → keep surrounding newlines around the body
+    local body = str:match("^```[%w]*\n(.*)\n```%s*$")
+    if body then
+        return "\n" .. body .. "\n"
     end
-    -- Check for single backticks
-    if str:match("^`.*`$") then
-        return str:sub(2, -2)
+    -- ```code``` on one line
+    local triple = str:match("^```(.*)```$")
+    if triple then
+        return triple
     end
-    -- Return the string as is if no patterns match
+    -- `code`
+    local single = str:match("^`(.*)`$")
+    if single then
+        return single
+    end
     return str
 end
 
