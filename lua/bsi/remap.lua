@@ -6,6 +6,7 @@ local fastgit     = require("bsi.fastgit")
 local multigrep   = require("bsi.multigrep")
 local rglist      = require("bsi.rglist")
 local bsi_tree    = require("bsi.ui.tree")
+local tui         = require("bsi.tui")
 
 -- Keymaps are automatically loaded on the VeryLazy event
 -- Default keymaps that are always set: https://github.com/LazyVim/LazyVim/blob/main/lua/lazyvim/config/keymaps.lua
@@ -116,10 +117,13 @@ vim.keymap.set("v", "<leader>la", function()
     ai.ask_v()
 end, { noremap = true, desc = ":Lazy" })
 
--- Lazygit
-vim.keymap.set("n", "<leader>gg", "<cmd>LazyGit<cr>", { noremap = true, desc = "Open lazygit" })
--- Lazydocker
-vim.keymap.set("n", "<leader>dd", "<cmd>LazyDocker<cr>", { noremap = true, desc = "Open lazydocker" })
+-- Named TUI floats (hide ≠ kill; one slot)
+vim.keymap.set({ "n", "t" }, "<leader>gg", function() tui.toggle("lazygit") end, { noremap = true, desc = "Open lazygit" })
+vim.keymap.set({ "n", "t" }, "<leader>dd", function() tui.toggle("lazydocker") end, { noremap = true, desc = "Open lazydocker" })
+vim.keymap.set({ "n", "t" }, "<leader>tk", function() tui.toggle("k9s") end, { noremap = true, desc = "k9s" })
+vim.keymap.set({ "n", "t" }, "<leader>xg", function() tui.toggle("grok") end, { noremap = true, desc = "Grok" })
+vim.keymap.set("n", "<leader>T", function() tui.pick() end, { noremap = true, desc = "CLI tool picker" })
+vim.keymap.set({ "n", "t" }, "<C-\\>", function() tui.toggle_last() end, { noremap = true, desc = "Toggle last tool" })
 
 -- Gen.nvim
 vim.keymap.set({ "n", "v" }, "<leader>]", ":Gen<CR>")

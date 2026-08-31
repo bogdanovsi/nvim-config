@@ -50,8 +50,9 @@ vim.pack.add({
 
     -- git
     gh("sindrets/diffview.nvim"),
-    gh("kdheepak/lazygit.nvim"),
-    gh("sindrets/diffview.nvim"),
+
+    -- named TUI floats (hide window, keep job)
+    gh("akinsho/toggleterm.nvim"),
 
     -- markdown
     gh("MeanderingProgrammer/render-markdown.nvim"),
@@ -136,6 +137,7 @@ require("plugin.conform")
 require("plugin.lint")
 require("plugin.render-markdown")
 require("plugin.sniprun")
+require("plugin.toggleterm")
 require("xcodebuild").setup({})
 require("grug-far").setup({})
 require("claude-code").setup({

@@ -50,6 +50,9 @@ vim.opt.updatetime = 50
 vim.opt.colorcolumn = "80"
 vim.opt.fillchars = { eob = " " } -- change the character at the end of buffer
 
+-- Keep hidden terminal buffers (named TUI sessions) instead of unloading them.
+vim.o.hidden = true
+
 -- The unnamedplus option makes nvim use the system clipboard for all yank, delete, and put operations that would normally go to the unnamed register.
 vim.opt.clipboard = "unnamedplus"
 

@@ -115,3 +115,14 @@ local parsersToInstall = vim.iter(ensureInstalled)
     :totable()
 require('nvim-treesitter').install(parsersToInstall)
 
+-- PostCSS has no dedicated parser; highlight *.pcss with the css grammar.
+vim.treesitter.language.register("css", "postcss")
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = "postcss",
+  callback = function(ev)
+    pcall(vim.treesitter.start, ev.buf, "css")
+    vim.bo[ev.buf].commentstring = "/* %s */"
+    vim.bo[ev.buf].comments = "s1:/*,mb:*,ex:*/"
+  end,
+})
+

@@ -5,7 +5,9 @@ local keymap = vim.keymap
 local gitsigns = require('gitsigns')
 
 -- keymap
-vim.keymap.set("n", "<leader>lg", "<cmd>LazyGit<cr>", { desc = "LazyGit", noremap = true })
+vim.keymap.set({ "n", "t" }, "<leader>lg", function()
+    require("bsi.tui").toggle("lazygit")
+end, { desc = "LazyGit", noremap = true })
 vim.keymap.set('n', '<leader>cc', '<cmd>ClaudeCode<CR>', { desc = 'Toggle Claude Code', noremap = true })
 vim.keymap.set("n", "<leader>z", "<cmd>Zen<CR>", { desc = "Zen mod", noremap = true })
 

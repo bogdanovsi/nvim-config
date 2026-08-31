@@ -37,7 +37,9 @@ vim.diagnostic.config({
 vim.cmd.colorscheme("tokyonight-night")
 
 -- keymap
-vim.keymap.set("n", "<leader>lg", "<cmd>LazyGit<cr>", { desc = "LazyGit", noremap = true })
+vim.keymap.set({ "n", "t" }, "<leader>lg", function()
+    require("bsi.tui").toggle("lazygit")
+end, { desc = "LazyGit", noremap = true })
 vim.keymap.set("n", "<leader>z", "<cmd>Zen<CR>", { desc = "Zen mod", noremap = true })
 
 -- harpoon keymap

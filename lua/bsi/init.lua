@@ -119,6 +119,28 @@ autocmd({ 'BufNewFile', 'BufRead' }, {
     end
 })
 
+-- PostCSS (*.pcss): filetype lives in filetype.lua (early detection).
+-- Treesitter/comments: lua/plugin/treesitter.lua. LSP: lsp/css-ls.lua.
+do
+    local ok, devicons = pcall(require, "nvim-web-devicons")
+    if ok then
+        -- Plugin ships css/scss icons only; reuse the css glyph for *.pcss.
+        local css = devicons.get_icons()["css"] or {
+            icon = "",
+            color = "#663399",
+            cterm_color = "91",
+        }
+        devicons.set_icon({
+            pcss = {
+                icon = css.icon,
+                color = css.color,
+                cterm_color = css.cterm_color,
+                name = "Postcss",
+            },
+        })
+    end
+end
+
 -- Go templates: detect host/result language and inject treesitter highlighting.
 -- See lua/bsi/gotmpl.lua (filename like *.html.tmpl, or content heuristics).
 require("bsi.gotmpl").setup()
@@ -174,7 +196,6 @@ autocmd("FileType", {
         "neotest-output-panel",
         "dbout",
         "gitsigns.blame",
-        "lazygit",
         "gitsigns",
     },
     callback = function(event)

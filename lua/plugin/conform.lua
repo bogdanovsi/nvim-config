@@ -8,6 +8,7 @@ require("conform").setup({
     bash = { "shfmt" },
     rust = { "rustfmt" },
     ejs = { "prettier" },
+    postcss = { "prettier" },
     -- prettier: markdown prose + js/ts/json/yaml/html/css fences
     -- injected: remaining fences via formatters_by_ft (go, lua, python, …)
     markdown = { "prettier", "injected" },

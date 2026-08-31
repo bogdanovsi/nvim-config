@@ -88,19 +88,7 @@ function M.tail_lsp_log(lines)
     })
 end
 
-function M.lazy_git()
-    M.open_term_float({ 'lazygit' }, {
-        title = ' LSP Log ',
-        border = 'rounded',
-    })
-end
 
-vim.api.nvim_create_user_command('LazyDocker', function()
-    M.open_term_float({ 'lazydocker' }, {
-        title = 'lazydocker',
-        border = 'rounded',
-    })
-end, {})
 
 -- vim.api.nvim_create_user_command('PlantUML', function()
 --     local file = vim.fn.shellescape(vim.api.nvim_buf_get_name(0))
@@ -126,17 +114,6 @@ end, {})
 --     --         border = 'rounded',
 --     --     })
 -- end, {})
-
-vim.api.nvim_create_user_command('K9S', function()
-    M.open_term_float({ 'k9s' }, {
-        title = 'k9s',
-        border = 'rounded',
-    })
-end, {})
-
-vim.api.nvim_create_user_command('LG', function()
-    M.lazy_git()
-end, {})
 
 vim.api.nvim_create_user_command('LspLog', function()
     M.tail_lsp_log()
