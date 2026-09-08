@@ -48,8 +48,9 @@ local function on_open(term)
     end, { buffer = buf, silent = true, desc = "Hide TUI" })
 
     -- vim-tmux-navigator uses <C-h/j/k/l> in terminal mode and leaves insert.
-    -- TUIs need those chords; send them to the job instead.
-    for _, lhs in ipairs({ "<C-h>", "<C-j>", "<C-k>", "<C-l>" }) do
+    -- Neovim also waits on Esc as a keycode prefix (and may leave terminal mode).
+    -- TUIs need those keys immediately; send them to the job instead.
+    for _, lhs in ipairs({ "<Esc>", "<C-h>", "<C-j>", "<C-k>", "<C-l>" }) do
         vim.keymap.set("t", lhs, lhs, { buffer = buf, nowait = true, noremap = true })
     end
 

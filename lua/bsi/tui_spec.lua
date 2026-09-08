@@ -135,14 +135,21 @@ describe("bsi.tui", function()
 
         local tmaps = vim.api.nvim_buf_get_keymap(buf, "t")
         local has_hide = false
+        local has_esc = false
         for _, m in ipairs(tmaps) do
             local lhs = m.lhs or ""
-            assert.are_not.equal("<Esc>", lhs)
+            local rhs = m.rhs or ""
             assert.are_not.equal("q", lhs)
+            assert.is_nil(rhs:find("close", 1, true))
+            if lhs == "<Esc>" then
+                has_esc = true
+                assert.equals("<Esc>", rhs)
+            end
             if lhs == "<C-Bslash>" or lhs == "<C-\\>" or lhs:find("Bslash", 1, true) then
                 has_hide = true
             end
         end
+        assert.is_true(has_esc)
         assert.is_true(has_hide)
         vim.api.nvim_buf_delete(buf, { force = true })
     end)

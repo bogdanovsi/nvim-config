@@ -857,6 +857,73 @@ function Tree:toggle()
   self:render()
 end
 
+---@param win integer
+---@return boolean
+function Tree:_is_editor_win(win)
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    return false
+  end
+  if win == self.winid then
+    return false
+  end
+  local cfg = vim.api.nvim_win_get_config(win)
+  if cfg.relative ~= "" then
+    return false
+  end
+  local ok_fix, fix = pcall(vim.api.nvim_get_option_value, "winfixbuf", { win = win })
+  if ok_fix and fix then
+    return false
+  end
+  local buf = vim.api.nvim_win_get_buf(win)
+  if vim.bo[buf].buftype ~= "" or vim.bo[buf].filetype == "Tree" then
+    return false
+  end
+  return true
+end
+
+---@return integer|nil
+function Tree:_find_editor_win()
+  local tab = vim.api.nvim_get_current_tabpage()
+  if self.winid and vim.api.nvim_win_is_valid(self.winid) then
+    tab = vim.api.nvim_win_get_tabpage(self.winid)
+  end
+  local prev = vim.fn.win_getid(vim.fn.winnr("#"))
+  local fallback
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
+    if self:_is_editor_win(win) then
+      if win == prev then
+        return win
+      end
+      if not fallback then
+        fallback = win
+      end
+    end
+  end
+  return fallback
+end
+
+--- Open `path` in a normal editor window. Never replaces the tree buffer.
+---@param path string
+function Tree:_edit_in_editor(path)
+  if not path or path == "" then
+    return
+  end
+  local win = self:_find_editor_win()
+  if not win then
+    if self.winid and vim.api.nvim_win_is_valid(self.winid) then
+      vim.api.nvim_set_current_win(self.winid)
+    end
+    vim.cmd("vsplit")
+    win = vim.api.nvim_get_current_win()
+    -- vsplit copies window-local options; the new editor must be allowed to :edit.
+    pcall(vim.api.nvim_set_option_value, "winfixbuf", false, { win = win })
+    pcall(vim.api.nvim_set_option_value, "winfixwidth", false, { win = win })
+  else
+    vim.api.nvim_set_current_win(win)
+  end
+  vim.cmd("edit " .. vim.fn.fnameescape(path))
+end
+
 function Tree:_open_file()
   if not self.visible_nodes or #self.visible_nodes == 0 then
     return
@@ -866,8 +933,7 @@ function Tree:_open_file()
   if not node or node.type ~= "file" then
     return
   end
-  vim.cmd("wincmd l")
-  vim.cmd("edit " .. vim.fn.fnameescape(node.path))
+  self:_edit_in_editor(node.path)
 end
 
 function Tree:_open_system()
@@ -998,8 +1064,7 @@ function Tree:_add_file()
 
     if result.kind == "file" and result.path then
       vim.schedule(function()
-        vim.cmd("wincmd l")
-        vim.cmd("edit " .. vim.fn.fnameescape(result.path))
+        self:_edit_in_editor(result.path)
       end)
     end
   end)
